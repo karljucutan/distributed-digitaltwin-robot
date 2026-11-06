@@ -1,0 +1,31 @@
+package fleetsimulator
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+)
+
+type SimulationRequest struct {
+	RobotCount int `json:"robot_count"`
+	TTLSeconds int `json:"ttl_seconds"`
+}
+
+type SimulationHTTPHandler struct {
+	Manager *SimulationManager
+}
+
+func (s *SimulationHTTPHandler) SimulationHttpHandler(w http.ResponseWriter, r *http.Request) {
+	var req SimulationRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		return
+	}
+
+	go s.Manager.RunSimulation(
+		req.RobotCount,
+		time.Duration(req.TTLSeconds)*time.Second, 10*time.Millisecond)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+}

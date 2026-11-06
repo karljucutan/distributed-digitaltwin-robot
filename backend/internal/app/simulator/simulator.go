@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/karljucutan/distributed-digitaltwin-robot/internal/features/fleetsimulator"
 	"github.com/karljucutan/distributed-digitaltwin-robot/pkg/configuration"
 )
 
@@ -15,7 +16,12 @@ type App struct {
 	apiServer *http.Server
 }
 
-func NewApp() *App {
+func NewApp(ctx context.Context) *App {
+	simulationHttpHandler := &fleetsimulator.SimulationHTTPHandler{
+		Manager: &fleetsimulator.SimulationManager{
+			AppContext: ctx,
+		},
+	}
 
 	return &App{
 		apiServer: &http.Server{
@@ -24,7 +30,7 @@ func NewApp() *App {
 			ReadTimeout:       time.Duration(configuration.GetEnvAsInt("API_READ_TIMEOUT", 10)) * time.Second,
 			WriteTimeout:      time.Duration(configuration.GetEnvAsInt("API_WRITE_TIMEOUT", 30)) * time.Second,
 			IdleTimeout:       time.Duration(configuration.GetEnvAsInt("API_IDLE_TIMEOUT", 60)) * time.Second,
-			Handler:           newHttpHandler(),
+			Handler:           newHttpServer(simulationHttpHandler),
 		},
 	}
 }
@@ -61,8 +67,10 @@ func (a *App) Run(ctx context.Context) error {
 	return nil
 }
 
-func newHttpHandler() http.Handler {
+func newHttpServer(simulationHttpHandler *fleetsimulator.SimulationHTTPHandler) http.Handler {
 	httpMux := http.NewServeMux()
-	// register routes
+
+	httpMux.HandleFunc("POST /api/simulation", simulationHttpHandler.SimulationHttpHandler)
+
 	return httpMux
 }

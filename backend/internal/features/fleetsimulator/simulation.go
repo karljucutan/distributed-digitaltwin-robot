@@ -2,6 +2,7 @@ package fleetsimulator
 
 import (
 	"context"
+	"log/slog"
 	"math"
 	"strconv"
 	"sync/atomic"
@@ -19,38 +20,39 @@ const (
 )
 
 type RobotTwin struct {
-	ID          uint64
+	ID          int64
 	Name        string
-	Sequence    uint64
+	Sequence    int64
 	PhaseOffset float64
 }
 
 type RobotTelemetry struct {
-	RobotID                uint64
+	RobotID                int64
 	Timestamp              time.Time
-	Sequence               uint64
+	Sequence               int64
 	JointPositionRad       [6]float64
 	JointVelocityRadPerSec [6]float64
 	Status                 RobotStatus
 }
 
 type SimulationManager struct {
-	RobotCounter atomic.Uint64
+	AppContext   context.Context
+	RobotCounter atomic.Int64
 }
 
-func (m *SimulationManager) RunSimulation(ctx context.Context, robotCount int, ttl time.Duration, tickInterval time.Duration) {
+func (m *SimulationManager) RunSimulation(robotCount int, ttl time.Duration, tickInterval time.Duration) {
 	robots := make([]RobotTwin, robotCount)
 	for index := range robotCount {
 		id := m.RobotCounter.Add(1)
 
 		robots[index] = RobotTwin{
 			ID:   id,
-			Name: "Robot_" + strconv.FormatUint(id, 10),
+			Name: "Robot_" + strconv.FormatInt(id, 10),
 		}
 	}
 
 	startedAt := time.Now()
-	simulationCtx, cancel := context.WithTimeout(ctx, ttl)
+	simulationCtx, cancel := context.WithTimeout(m.AppContext, ttl)
 	defer cancel()
 
 	const cycleSeconds = 4.0
@@ -85,6 +87,7 @@ func (m *SimulationManager) RunSimulation(ctx context.Context, robotCount int, t
 				}
 
 				// publish to NATS
+				slog.Info("publishing to NATS")
 			}
 		}
 	}
