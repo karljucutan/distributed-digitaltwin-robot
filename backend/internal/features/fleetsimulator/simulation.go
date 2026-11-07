@@ -95,12 +95,13 @@ func (m *SimulationManager) RunSimulation(ctx context.Context, robotCount int, t
 				// publish to NATS
 				payload, err := json.Marshal(telemetry)
 				if err != nil {
-					return
+					continue
 				}
 
 				subject := RobotTelemetrySubject
-				if _, err := m.JetStream.Publish(simulationCtx, subject, payload); err != nil {
-					return
+				if _, err := m.JetStream.PublishAsync(subject, payload); err != nil {
+					slog.Error("publish failed", "robot", robot.ID, "err", err)
+					continue
 				}
 			}
 		}
