@@ -1,19 +1,27 @@
 name: distributed-digitaltwin-robot
 
 services:
+  nats:
+    image: nats:2.15-alpine
+    command: ["--js"]
+    ports:
+      - "4222:4222"
+
   backend:
     build:
       context: ./backend
       dockerfile: Containerfile
       target: simulator
+    environment:
+      NATS_URL: nats://nats:4222
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+    depends_on:
+      - nats
 
-# Uncomment these services after implementing the telemetry-gateway entry point.
-#  nats:
-#    image: nats:2.10-alpine
-#    command: ["--js"]
-#    ports:
-#      - "4222:4222"
-#
 #  telemetry-gateway:
 #    build:
 #      context: ./backend

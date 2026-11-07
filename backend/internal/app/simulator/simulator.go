@@ -10,17 +10,44 @@ import (
 
 	"github.com/karljucutan/distributed-digitaltwin-robot/internal/features/fleetsimulator"
 	"github.com/karljucutan/distributed-digitaltwin-robot/pkg/configuration"
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 type App struct {
 	apiServer *http.Server
+	nc        *nats.Conn
 }
 
-func NewApp(ctx context.Context) *App {
-	simulationHttpHandler := &fleetsimulator.SimulationHTTPHandler{
-		Manager: &fleetsimulator.SimulationManager{
-			AppContext: ctx,
-		},
+func NewApp(appCtx context.Context) (*App, error) {
+	nc, err := nats.Connect(configuration.GetEnv("NATS_URL", nats.DefaultURL))
+	if err != nil {
+		return nil, fmt.Errorf("connect to NATS: %w", err)
+	}
+
+	js, err := jetstream.New(nc)
+	if err != nil {
+		nc.Close()
+		return nil, fmt.Errorf("create JetStream client: %w", err)
+	}
+
+	streamCtx, cancel := context.WithTimeout(appCtx, 10*time.Second)
+	defer cancel()
+
+	// TODO: Provision this stream through deployment infrastructure in production.
+	if _, err := js.CreateOrUpdateStream(streamCtx, jetstream.StreamConfig{
+		Name:     "ROBOT_TELEMETRY",
+		Subjects: []string{"telemetry.robot.*"},
+		Storage:  jetstream.FileStorage,
+		MaxAge:   time.Hour,
+		MaxBytes: 1 << 30,
+	}); err != nil {
+		nc.Close()
+		return nil, fmt.Errorf("configure robot telemetry stream: %w", err)
+	}
+
+	manager := &fleetsimulator.SimulationManager{
+		JetStream: js,
 	}
 
 	return &App{
@@ -30,12 +57,24 @@ func NewApp(ctx context.Context) *App {
 			ReadTimeout:       time.Duration(configuration.GetEnvAsInt("API_READ_TIMEOUT", 10)) * time.Second,
 			WriteTimeout:      time.Duration(configuration.GetEnvAsInt("API_WRITE_TIMEOUT", 30)) * time.Second,
 			IdleTimeout:       time.Duration(configuration.GetEnvAsInt("API_IDLE_TIMEOUT", 60)) * time.Second,
-			Handler:           newHttpServer(simulationHttpHandler),
+			Handler:           newHttpServer(appCtx, manager),
 		},
-	}
+		nc: nc,
+	}, nil
 }
 
-func (a *App) Run(ctx context.Context) error {
+func (a *App) Run(appCtx context.Context) error {
+	defer func() {
+		closed := a.nc.StatusChanged(nats.CLOSED)
+		defer a.nc.RemoveStatusListener(closed)
+
+		if err := a.nc.Drain(); err != nil {
+			slog.Error("drain NATS", "error", err)
+			return
+		}
+		<-closed
+	}()
+
 	serverErrors := make(chan error, 1)
 	go func() {
 		slog.Info("starting API server", "addr", a.apiServer.Addr)
@@ -48,7 +87,7 @@ func (a *App) Run(ctx context.Context) error {
 			return fmt.Errorf("serve API: %w", err)
 		}
 		return nil
-	case <-ctx.Done():
+	case <-appCtx.Done():
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -67,10 +106,14 @@ func (a *App) Run(ctx context.Context) error {
 	return nil
 }
 
-func newHttpServer(simulationHttpHandler *fleetsimulator.SimulationHTTPHandler) http.Handler {
+func newHttpServer(
+	appCtx context.Context,
+	simulationManager *fleetsimulator.SimulationManager) http.Handler {
 	httpMux := http.NewServeMux()
 
-	httpMux.HandleFunc("POST /api/simulation", simulationHttpHandler.SimulationHttpHandler)
+	httpMux.HandleFunc("POST /api/simulation", func(w http.ResponseWriter, r *http.Request) {
+		fleetsimulator.SimulationHttpHandler(appCtx, simulationManager, w, r)
+	})
 
 	return httpMux
 }

@@ -2,11 +2,14 @@ package fleetsimulator
 
 import (
 	"context"
+	"encoding/json/v2"
 	"log/slog"
 	"math"
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 type RobotStatus string
@@ -36,11 +39,13 @@ type RobotTelemetry struct {
 }
 
 type SimulationManager struct {
-	AppContext   context.Context
+	JetStream    jetstream.JetStream
 	RobotCounter atomic.Int64
 }
 
-func (m *SimulationManager) RunSimulation(robotCount int, ttl time.Duration, tickInterval time.Duration) {
+const RobotTelemetrySubject = "telemetry.robot.state"
+
+func (m *SimulationManager) RunSimulation(ctx context.Context, robotCount int, ttl time.Duration, tickInterval time.Duration) {
 	robots := make([]RobotTwin, robotCount)
 	for index := range robotCount {
 		id := m.RobotCounter.Add(1)
@@ -52,7 +57,7 @@ func (m *SimulationManager) RunSimulation(robotCount int, ttl time.Duration, tic
 	}
 
 	startedAt := time.Now()
-	simulationCtx, cancel := context.WithTimeout(m.AppContext, ttl)
+	simulationCtx, cancel := context.WithTimeout(ctx, ttl)
 	defer cancel()
 
 	const cycleSeconds = 4.0
@@ -65,12 +70,13 @@ func (m *SimulationManager) RunSimulation(robotCount int, ttl time.Duration, tic
 	for {
 		select {
 		case <-simulationCtx.Done():
+			slog.Info("done")
 			return
 		case timestamp := <-ticker.C:
 			elapsed := timestamp.Sub(startedAt).Seconds()
 
 			for index := range robots {
-				robot := robots[index]
+				robot := &robots[index]
 				robot.Sequence++
 
 				telemetry := RobotTelemetry{
@@ -87,7 +93,15 @@ func (m *SimulationManager) RunSimulation(robotCount int, ttl time.Duration, tic
 				}
 
 				// publish to NATS
-				slog.Info("publishing to NATS")
+				payload, err := json.Marshal(telemetry)
+				if err != nil {
+					return
+				}
+
+				subject := RobotTelemetrySubject
+				if _, err := m.JetStream.Publish(simulationCtx, subject, payload); err != nil {
+					return
+				}
 			}
 		}
 	}
