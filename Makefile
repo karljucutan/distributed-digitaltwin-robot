@@ -6,15 +6,15 @@ GO ?= go
 
 help:
 	@printf '%s\n' \
-	  'build  Build the backend image' \
+	  'build  Build the application images' \
 	  'fmt    Format Go code' \
 	  'vet    Run Go static checks' \
 	  'test   Run Go tests' \
 	  'check  Run vet and tests' \
 	  'race   Run tests with the race detector' \
-	  'up     Build and start the backend in the background' \
+	  'up     Build and start the Compose services in the background' \
 	  'down   Stop and remove the Compose services' \
-	  'logs   Follow backend logs' \
+	  'logs   Follow simulator logs' \
 	  'ps     Show Compose service status'
 
 build:
@@ -41,7 +41,7 @@ down:
 	$(COMPOSE) down
 
 logs:
-	$(COMPOSE) logs -f backend
+	$(COMPOSE) logs -f simulator
 
 ps:
 	$(COMPOSE) ps

@@ -6,8 +6,8 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/simulator ./cmd/app/simulator
 
-# Stage 2: Run the simulator API.
-FROM alpine:3.22 AS simulator
+# Stage 2: Build the simulator runtime image.
+FROM alpine:3.24 AS simulator
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 COPY --from=builder /out/simulator ./simulator
@@ -15,14 +15,16 @@ EXPOSE 8080
 USER 10001:10001
 ENTRYPOINT ["./simulator"]
 
-# Future target: uncomment after cmd/app/telemetry-gateway has a main package.
-# FROM builder AS telemetry-gateway-builder
-# RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/telemetry-gateway ./cmd/app/telemetry-gateway
-#
-# FROM alpine:3.22 AS telemetry-gateway
-# RUN apk add --no-cache ca-certificates
-# WORKDIR /app
-# COPY --from=telemetry-gateway-builder /out/telemetry-gateway ./telemetry-gateway
-# EXPOSE 3000
-# USER 10001:10001
-# ENTRYPOINT ["./telemetry-gateway"]
+
+# Stage 3: Compile the digital twin backend.
+FROM builder AS digitaltwin-builder
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false -ldflags="-s -w" -o /out/digitaltwin ./cmd/app/digitaltwin
+
+# Stage 4: Build the digital twin runtime image.
+FROM alpine:3.24 AS digitaltwin
+RUN apk add --no-cache ca-certificates
+WORKDIR /app
+COPY --from=digitaltwin-builder /out/digitaltwin ./digitaltwin
+EXPOSE 8080
+USER 10001:10001
+ENTRYPOINT ["./digitaltwin"]

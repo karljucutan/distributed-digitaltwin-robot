@@ -34,7 +34,7 @@ func NewApp(appCtx context.Context) (*App, error) {
 	streamCtx, cancel := context.WithTimeout(appCtx, 10*time.Second)
 	defer cancel()
 
-	// TODO: Provision this stream through deployment infrastructure in production.
+	// Option: Provision this stream through deployment infrastructure in production.
 	if _, err := js.CreateOrUpdateStream(streamCtx, jetstream.StreamConfig{
 		Name:     "ROBOT_TELEMETRY",
 		Subjects: []string{"telemetry.robot.*"},

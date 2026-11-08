@@ -1,8 +1,4 @@
 services:
-  backend:
+  simulator:
     ports:
       - "8080:8080"
-
-# telemetry-gateway:
-#   ports:
-#     - "3000:3000"

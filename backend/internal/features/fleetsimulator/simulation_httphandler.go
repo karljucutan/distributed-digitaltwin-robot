@@ -17,6 +17,7 @@ func SimulationHttpHandler(
 	manager *SimulationManager,
 	w http.ResponseWriter,
 	r *http.Request) {
+
 	var req SimulationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
