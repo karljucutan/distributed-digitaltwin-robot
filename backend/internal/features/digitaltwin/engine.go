@@ -77,6 +77,11 @@ func (e *Engine) Run(appCtx context.Context) error {
 func processTelemetry(telemetry *domain.RobotTelemetry) error {
 	// Implement the actual processing logic for the telemetry here.
 	// For now, just print it as a placeholder.
-	fmt.Printf("Processing telemetry: %+v\n", telemetry)
+
+	// add valkey
+	// add timescaledb
+	// add array buffer for batch saving to db
+
+	slog.Info("Processing telemetry", "telemetry", telemetry)
 	return nil
 }
