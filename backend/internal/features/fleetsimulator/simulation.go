@@ -65,7 +65,7 @@ func (m *SimulationManager) RunSimulation(ctx context.Context, robotCount int, t
 	for {
 		select {
 		case <-simulationCtx.Done():
-			slog.Info("done")
+			slog.Info("done simulation", "duration", time.Since(startedAt))
 			return
 		case timestamp := <-ticker.C:
 			deltaTime := timestamp.Sub(previousTick).Seconds()
