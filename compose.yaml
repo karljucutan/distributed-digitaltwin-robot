@@ -7,6 +7,28 @@ services:
     ports:
       - "4222:4222"
 
+  valkey:
+    image: valkey/valkey:9-alpine
+    container_name: sim_valkey_cache
+    command:
+      [
+        "valkey-server",
+        "--appendonly", "yes",
+        "--maxmemory", "3gb",
+        "--maxmemory-policy", "volatile-lru",
+      ]
+    volumes:
+      - valkey-data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          cpus: "0.5"
+          memory: 1G
+    restart: unless-stopped
+
   simulator:
     build:
       context: ./backend
@@ -30,7 +52,8 @@ services:
     environment:
       NATS_URL: nats://nats:4222
       ENGINE_WORKER_COUNT: 64
-      ENGINE_BUFFER_SIZE: 10000
+      ENGINE_BUFFER_SIZE: 1000
+      TIMESCALEDB_WRITE_QUEUE_SIZE: 1000 # DB writer queue
       TIMESCALEDB_FLUSH_BATCH_SIZE: 5000 # Flush to TimescaleDB every 5000 messages or 5s
       TIMESCALEDB_FLUSH_INTERVAL: "5s" # Flush to TimescaleDB every 5 seconds
     deploy:
@@ -38,6 +61,9 @@ services:
       resources:
         limits:
           cpus: "2.0"
-          memory: "32M"
+          memory: "64M"
     depends_on:
       - nats
+
+volumes:
+  valkey-data:

@@ -11,11 +11,13 @@ import (
 	"github.com/karljucutan/distributed-digitaltwin-robot/pkg/retry"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/valkey-io/valkey-go"
 )
 
 type App struct {
-	nc  *nats.Conn
-	dte *digitaltwin.Engine
+	natsConn          *nats.Conn
+	digitalTwinEngine *digitaltwin.Engine
+	valkeyClient      valkey.Client
 }
 
 func NewApp(appCtx context.Context) (*App, error) {
@@ -58,27 +60,37 @@ func NewApp(appCtx context.Context) (*App, error) {
 		return nil, err
 	}
 
-	dtEngine := digitaltwin.NewEngine(cons)
+	// Connect to a single valkey node:
+	valkeyClient, err := valkey.NewClient(valkey.ClientOption{
+		InitAddress: []string{"valkey:6379"},
+	})
+	if err != nil {
+		nc.Close()
+		return nil, fmt.Errorf("create valkey client: %w", err)
+	}
+
+	dtEngine := digitaltwin.NewEngine(cons, valkeyClient)
 
 	return &App{
-		nc:  nc,
-		dte: dtEngine,
+		natsConn:          nc,
+		digitalTwinEngine: dtEngine,
+		valkeyClient:      valkeyClient,
 	}, nil
 }
 
 func (a *App) Run(appCtx context.Context) error {
 	defer func() {
-		closed := a.nc.StatusChanged(nats.CLOSED)
-		defer a.nc.RemoveStatusListener(closed)
+		closed := a.natsConn.StatusChanged(nats.CLOSED)
+		defer a.natsConn.RemoveStatusListener(closed)
 
-		if err := a.nc.Drain(); err != nil {
+		if err := a.natsConn.Drain(); err != nil {
 			slog.Error("drain NATS", "error", err)
 		}
 	}()
 
 	slog.Info("starting digital twin engine")
 
-	if err := a.dte.Run(appCtx); err != nil {
+	if err := a.digitalTwinEngine.Run(appCtx); err != nil {
 		return fmt.Errorf("run digital twin engine: %w", err)
 	}
 

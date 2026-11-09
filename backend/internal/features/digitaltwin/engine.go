@@ -9,16 +9,19 @@ import (
 	"github.com/karljucutan/distributed-digitaltwin-robot/internal/domain"
 	"github.com/karljucutan/distributed-digitaltwin-robot/pkg/configuration"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/valkey-io/valkey-go"
 	"golang.org/x/sync/errgroup"
 )
 
 type Engine struct {
-	jetstream jetstream.Consumer
+	jetstream    jetstream.Consumer
+	valkeyClient valkey.Client
 }
 
-func NewEngine(consumer jetstream.Consumer) *Engine {
+func NewEngine(consumer jetstream.Consumer, valkeyClient valkey.Client) *Engine {
 	return &Engine{
-		jetstream: consumer,
+		jetstream:    consumer,
+		valkeyClient: valkeyClient,
 	}
 }
 
@@ -79,6 +82,9 @@ func processTelemetry(telemetry *domain.RobotTelemetry) error {
 	// For now, just print it as a placeholder.
 
 	// add valkey
+	// digital twin processing logic goes here
+
+	// stage 2: this will be in another goroutine/worker that handles batch saving to TimescaleDB and acking messages
 	// add timescaledb
 	// add array buffer for batch saving to db
 
