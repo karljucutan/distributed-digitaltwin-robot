@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"errors"
+	"fmt"
+	"time"
+)
 
 type RobotStatus string
 
@@ -17,6 +21,8 @@ var FaultCodes = [...]string{
 	"encoder_error",
 }
 
+var ErrInvalidTelemetry = errors.New("invalid telemetry")
+
 type RobotTelemetry struct {
 	RobotID                int64
 	Timestamp              time.Time
@@ -25,4 +31,19 @@ type RobotTelemetry struct {
 	JointVelocityRadPerSec [6]float64
 	Status                 RobotStatus
 	FaultCode              string
+}
+
+func (t *RobotTelemetry) Validate() error {
+	if t.RobotID <= 0 || t.Sequence <= 0 || t.Timestamp.IsZero() {
+		return fmt.Errorf("%w: robot=%d sequence=%d timestamp=%s",
+			ErrInvalidTelemetry, t.RobotID, t.Sequence, t.Timestamp)
+	}
+
+	switch t.Status {
+	case RobotStatusIdle, RobotStatusMoving, RobotStatusPaused,
+		RobotStatusFaulted, RobotStatusStopped:
+		return nil
+	default:
+		return fmt.Errorf("%w: robot=%d status=%q", ErrInvalidTelemetry, t.RobotID, t.Status)
+	}
 }
