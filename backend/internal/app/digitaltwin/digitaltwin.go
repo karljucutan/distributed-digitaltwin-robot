@@ -79,6 +79,7 @@ func NewApp(appCtx context.Context) (*App, error) {
 }
 
 func (a *App) Run(appCtx context.Context) error {
+	defer a.valkeyClient.Close()
 	defer func() {
 		closed := a.natsConn.StatusChanged(nats.CLOSED)
 		defer a.natsConn.RemoveStatusListener(closed)

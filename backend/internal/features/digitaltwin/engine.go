@@ -3,8 +3,10 @@ package digitaltwin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/karljucutan/distributed-digitaltwin-robot/internal/domain"
 	"github.com/karljucutan/distributed-digitaltwin-robot/pkg/configuration"
@@ -13,23 +15,29 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	twinUpdateTimeout = 2 * time.Second
+	maxTwinRetries    = 8
+)
+
+type twinRepository interface {
+	Get(ctx context.Context, robotID int64) (domain.RobotTwin, error)
+	Save(ctx context.Context, twin domain.RobotTwin, expectedVersion uint64) error
+}
+
 type Engine struct {
-	jetstream    jetstream.Consumer
-	valkeyClient valkey.Client
+	jetstream      jetstream.Consumer
+	twinRepository twinRepository
 }
 
 func NewEngine(consumer jetstream.Consumer, valkeyClient valkey.Client) *Engine {
 	return &Engine{
-		jetstream:    consumer,
-		valkeyClient: valkeyClient,
+		jetstream:      consumer,
+		twinRepository: newTwinStore(valkeyClient),
 	}
 }
 
 func (e *Engine) Run(appCtx context.Context) error {
-	// NATS JS already has a built-in mechanism for client-side buffering.
-	// I will use it instead of my initial plan to implement a local buffer using a channel.
-	// 	robotTelemetries := make(chan *domain.RobotTelemetry, bufferSize) // Buffered channel for robot telemetry; sends block when full, slowing message intake.
-
 	workerCount := configuration.GetEnvAsInt("ENGINE_WORKER_COUNT", 64)
 	bufferSize := configuration.GetEnvAsInt("ENGINE_BUFFER_SIZE", 10000)
 	messagesCtx, err := e.jetstream.Messages(jetstream.PullMaxMessages(bufferSize))
@@ -54,40 +62,99 @@ func (e *Engine) Run(appCtx context.Context) error {
 					return fmt.Errorf("worker %d: get message: %w", i, err)
 				}
 
-				var telemetry domain.RobotTelemetry
-				if err := json.Unmarshal(msg.Data(), &telemetry); err != nil {
-					return fmt.Errorf("worker %d: unmarshal message: %w", i, err)
-				}
-
-				if err := processTelemetry(&telemetry); err != nil {
-					return fmt.Errorf("worker %d: process telemetry: %w", i, err)
-				}
-
-				if err := msg.Ack(); err != nil {
-					return fmt.Errorf("worker %d: acknowledge telemetry: %w", i, err)
+				if err := e.handleMessage(groupCtx, msg); err != nil {
+					if groupCtx.Err() != nil {
+						return nil // Shutting down; the unacked message is redelivered.
+					}
+					return fmt.Errorf("worker %d: %w", i, err)
 				}
 			}
 		})
 	}
 
-	if err := group.Wait(); err != nil {
-		return err
+	return group.Wait()
+}
+
+func (e *Engine) handleMessage(ctx context.Context, msg jetstream.Msg) error {
+	var telemetry domain.RobotTelemetry
+	if err := json.Unmarshal(msg.Data(), &telemetry); err != nil {
+		return rejectMessage(msg, "malformed telemetry", err)
 	}
 
+	metadata, err := msg.Metadata()
+	if err != nil {
+		return fmt.Errorf("read message metadata: %w", err)
+	}
+
+	err = e.processTelemetry(ctx, telemetry, metadata.Sequence.Stream)
+	if errors.Is(err, domain.ErrInvalidTelemetry) {
+		return rejectMessage(msg, "invalid telemetry", err)
+	}
+	if err != nil {
+		return fmt.Errorf("process telemetry: %w", err)
+	}
+
+	if err := msg.DoubleAck(ctx); err != nil {
+		return fmt.Errorf("acknowledge telemetry: %w", err)
+	}
 	return nil
 }
 
-func processTelemetry(telemetry *domain.RobotTelemetry) error {
-	// Implement the actual processing logic for the telemetry here.
-	// For now, just print it as a placeholder.
+func (e *Engine) processTelemetry(
+	ctx context.Context,
+	telemetry domain.RobotTelemetry,
+	streamSequence uint64,
+) error {
+	if err := telemetry.Validate(); err != nil {
+		return err
+	}
+	if streamSequence == 0 {
+		return errors.New("process telemetry: JetStream stream sequence is zero")
+	}
 
-	// add valkey
-	// digital twin processing logic goes here
+	ctx, cancel := context.WithTimeout(ctx, twinUpdateTimeout)
+	defer cancel()
 
-	// stage 2: this will be in another goroutine/worker that handles batch saving to TimescaleDB and acking messages
-	// add timescaledb
-	// add array buffer for batch saving to db
+	for attempt := range maxTwinRetries {
+		twin, err := e.twinRepository.Get(ctx, telemetry.RobotID)
+		if err != nil {
+			return err
+		}
 
-	slog.Info("Processing telemetry", "telemetry", telemetry)
+		expectedVersion := twin.Version
+		if !twin.Apply(telemetry, streamSequence) {
+			return nil // Duplicate or older telemetry.
+		}
+
+		err = e.twinRepository.Save(ctx, twin, expectedVersion)
+		if !errors.Is(err, errTwinConflict) {
+			return err
+		}
+
+		if err := waitBeforeRetry(ctx, attempt); err != nil {
+			return fmt.Errorf("retry twin %d: %w", telemetry.RobotID, err)
+		}
+	}
+
+	return fmt.Errorf("update twin %d: conflicted %d times", telemetry.RobotID, maxTwinRetries)
+}
+
+func rejectMessage(msg jetstream.Msg, reason string, cause error) error {
+	slog.Error("rejecting telemetry", "reason", reason, "error", cause)
+	if err := msg.TermWithReason(reason); err != nil {
+		return fmt.Errorf("terminate message: %w", err)
+	}
 	return nil
+}
+
+func waitBeforeRetry(ctx context.Context, attempt int) error {
+	timer := time.NewTimer(time.Duration(attempt+1) * time.Millisecond)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
