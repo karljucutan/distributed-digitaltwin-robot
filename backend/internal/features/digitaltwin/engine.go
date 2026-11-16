@@ -94,6 +94,7 @@ func (e *Engine) handleMessage(ctx context.Context, msg jetstream.Msg) error {
 		return fmt.Errorf("process telemetry: %w", err)
 	}
 
+	// TODO: Enqueue the telemetry and message for TimescaleDB batching here; let the batch writer ack after commit.
 	if err := msg.DoubleAck(ctx); err != nil {
 		return fmt.Errorf("acknowledge telemetry: %w", err)
 	}

@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help build fmt vet test check race up down logs ps
+.PHONY: help build fmt vet test check race up down remove-valkey-data logs ps
 
 COMPOSE ?= podman compose
 GO ?= go
@@ -14,6 +14,7 @@ help:
 	  'race   Run tests with the race detector' \
 	  'up     Build and start the Compose services in the background' \
 	  'down   Stop and remove the Compose services' \
+	  'remove-valkey-data  Clear the current Valkey database with valkey-cli' \
 	  'logs   Follow simulator logs' \
 	  'ps     Show Compose service status'
 
@@ -39,6 +40,9 @@ up:
 
 down:
 	$(COMPOSE) down
+
+remove-valkey-data:
+	$(COMPOSE) exec -T valkey valkey-cli FLUSHDB
 
 logs:
 	$(COMPOSE) logs -f simulator
