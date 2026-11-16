@@ -2,7 +2,7 @@ package digitaltwin
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -39,7 +39,7 @@ func NewEngine(consumer jetstream.Consumer, valkeyClient valkey.Client) *Engine 
 
 func (e *Engine) Run(appCtx context.Context) error {
 	workerCount := configuration.GetEnvAsInt("ENGINE_WORKER_COUNT", 64)
-	bufferSize := configuration.GetEnvAsInt("ENGINE_BUFFER_SIZE", 10000)
+	bufferSize := configuration.GetEnvAsInt("ENGINE_BUFFER_SIZE", 1000)
 	messagesCtx, err := e.jetstream.Messages(jetstream.PullMaxMessages(bufferSize))
 	if err != nil {
 		return fmt.Errorf("failed to initialize NATS streaming iterator: %w", err)

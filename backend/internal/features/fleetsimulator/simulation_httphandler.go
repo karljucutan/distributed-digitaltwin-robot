@@ -2,7 +2,7 @@ package fleetsimulator
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"net/http"
 	"time"
 )
@@ -19,7 +19,12 @@ func SimulationHttpHandler(
 	r *http.Request) {
 
 	var req SimulationRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	// v1 version
+	// if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	// 	http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+	// 	return
+	// }
+	if err := json.UnmarshalRead(r.Body, &req); err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 		return
 	}
