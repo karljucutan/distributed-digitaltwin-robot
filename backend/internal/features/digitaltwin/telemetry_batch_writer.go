@@ -9,26 +9,33 @@ import (
 )
 
 type TelemetryBatchWriter struct {
-	queue     chan domain.RobotTelemetry
+	queue     chan pendingTelemetry
 	batchSize int
+}
+
+type pendingTelemetry struct {
+	telemetry   domain.RobotTelemetry
+	onCommitted func() error
 }
 
 func NewTelemetryBatchWriter(queueSize int, batchSize int) *TelemetryBatchWriter {
 	return &TelemetryBatchWriter{
-		queue:     make(chan domain.RobotTelemetry, queueSize),
+		queue:     make(chan pendingTelemetry, queueSize),
 		batchSize: batchSize,
 	}
 }
 
-func (tbw *TelemetryBatchWriter) Insert(telemetry domain.RobotTelemetry) {
-	tbw.queue <- telemetry
+// Enqueue queues telemetry and its callback for background batch processing.
+// It blocks until queue space is available, not until the batch is flushed.
+func (tbw *TelemetryBatchWriter) Enqueue(pendingTelemetry pendingTelemetry) {
+	tbw.queue <- pendingTelemetry
 }
 
 func (tbw *TelemetryBatchWriter) Run(ctx context.Context, interval time.Duration) {
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		batch := make([]domain.RobotTelemetry, 0, tbw.batchSize)
+		batch := make([]pendingTelemetry, 0, tbw.batchSize)
 
 		for {
 			select {
@@ -37,12 +44,12 @@ func (tbw *TelemetryBatchWriter) Run(ctx context.Context, interval time.Duration
 				slog.Info("telemetry batch writer stopped", "reason", ctx.Err())
 				return
 
-			case telemetry, ok := <-tbw.queue:
+			case pendingTelemetry, ok := <-tbw.queue:
 				if !ok {
 					return
 				}
 
-				batch = append(batch, telemetry)
+				batch = append(batch, pendingTelemetry)
 				if len(batch) >= tbw.batchSize {
 					batch = tbw.flush(batch)
 					ticker.Reset(interval)
@@ -57,8 +64,17 @@ func (tbw *TelemetryBatchWriter) Run(ctx context.Context, interval time.Duration
 	}()
 }
 
-func (tbw *TelemetryBatchWriter) flush(batch []domain.RobotTelemetry) []domain.RobotTelemetry {
+func (tbw *TelemetryBatchWriter) flush(batch []pendingTelemetry) []pendingTelemetry {
 	// write to db
+
+	for _, pendingTelemetry := range batch {
+		if pendingTelemetry.onCommitted != nil {
+			if err := pendingTelemetry.onCommitted(); err != nil {
+				slog.Error("post-commit callback failed", "error", err)
+			}
+		}
+	}
+
 	slog.Info("flushing telemetry batch", "batch_size", len(batch))
 	return batch[:0]
 }
