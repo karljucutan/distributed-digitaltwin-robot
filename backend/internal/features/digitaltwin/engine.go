@@ -26,14 +26,20 @@ type twinRepository interface {
 }
 
 type Engine struct {
-	jetstream      jetstream.Consumer
-	twinRepository twinRepository
+	jetstream            jetstream.Consumer
+	twinRepository       twinRepository
+	telemetryBatchWriter *TelemetryBatchWriter
 }
 
-func NewEngine(consumer jetstream.Consumer, valkeyClient valkey.Client) *Engine {
+func NewEngine(
+	consumer jetstream.Consumer,
+	valkeyClient valkey.Client,
+	telemetryBatchWriter *TelemetryBatchWriter) *Engine {
+
 	return &Engine{
-		jetstream:      consumer,
-		twinRepository: newTwinStore(valkeyClient),
+		jetstream:            consumer,
+		twinRepository:       newTwinStore(valkeyClient),
+		telemetryBatchWriter: telemetryBatchWriter,
 	}
 }
 
@@ -95,9 +101,12 @@ func (e *Engine) handleMessage(ctx context.Context, msg jetstream.Msg) error {
 	}
 
 	// TODO: Enqueue the telemetry and message for TimescaleDB batching here; let the batch writer ack after commit.
+	e.telemetryBatchWriter.Insert(telemetry)
 	if err := msg.DoubleAck(ctx); err != nil {
 		return fmt.Errorf("acknowledge telemetry: %w", err)
 	}
+	// TODO: remove ack here
+
 	return nil
 }
 
