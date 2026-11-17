@@ -75,6 +75,5 @@ func (tbw *TelemetryBatchWriter) flush(batch []pendingTelemetry) []pendingTeleme
 		}
 	}
 
-	slog.Info("flushing telemetry batch", "batch_size", len(batch))
 	return batch[:0]
 }
