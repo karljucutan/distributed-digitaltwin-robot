@@ -64,8 +64,9 @@ services:
       target: digitaltwin
     environment:
       NATS_URL: nats://nats:4222
+      NATS_MAX_ACK_PENDING: 10000
       ENGINE_WORKER_COUNT: 64
-      ENGINE_BUFFER_SIZE: 1000
+      ENGINE_BUFFER_SIZE: 3000
       TIMESCALEDB_WRITE_QUEUE_SIZE: 1000 # DB writer queue
       TIMESCALEDB_FLUSH_BATCH_SIZE: 5000 # Flush to TimescaleDB every 5000 messages or 5s
       TIMESCALEDB_FLUSH_INTERVAL: "5s" # Flush to TimescaleDB every 5 seconds

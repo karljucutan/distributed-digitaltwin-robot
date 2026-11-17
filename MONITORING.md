@@ -68,6 +68,14 @@ podman stats -i 1 distributed-digitaltwin-robot-digitaltwin-1
 podman stats -i 1 distributed-digitaltwin-robot-digitaltwin-2
 ```
 
+```sh
+podman stats -i 1 distributed-digitaltwin-robot-nats-1
+```
+
+```sh
+podman stats -i 1 sim_valkey_cache
+```
+
 To follow timestamped logs from a container as new lines are written:
 
 ```sh

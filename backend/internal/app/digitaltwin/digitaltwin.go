@@ -52,6 +52,7 @@ func NewApp(appCtx context.Context) (*App, error) {
 			Durable:       "digital-twin",
 			DeliverPolicy: jetstream.DeliverAllPolicy,
 			AckPolicy:     jetstream.AckExplicitPolicy,
+			MaxAckPending: configuration.GetEnvAsInt("NATS_MAX_ACK_PENDING", 1000),
 		})
 		return err
 	})
