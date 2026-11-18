@@ -7,6 +7,23 @@ services:
     ports:
       - "4222:4222"
 
+  timescaledb:
+    image: timescale/timescaledb:latest-pg17
+    environment:
+      POSTGRES_DB: digitaltwin
+      POSTGRES_USER: tsdbadmin
+      POSTGRES_PASSWORD: tsdbpassword
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - timescaledb-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tsdbadmin -d digitaltwin"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
   valkey:
     image: valkey/valkey:9-alpine
     container_name: sim_valkey_cache
@@ -70,6 +87,7 @@ services:
       TIMESCALEDB_WRITE_QUEUE_SIZE: 3000 # DB writer queue
       TIMESCALEDB_FLUSH_BATCH_SIZE: 5000 # Flush to TimescaleDB every 5000 messages or 5s
       TIMESCALEDB_FLUSH_INTERVAL: "5s" # Flush to TimescaleDB every 5 seconds
+      TIMESCALEDB_DSN: postgres://tsdbadmin:tsdbpassword@timescaledb:5432/digitaltwin?sslmode=disable
     deploy:
       replicas: 2
       resources:
@@ -77,7 +95,11 @@ services:
           cpus: "2.0"
           memory: "64M"
     depends_on:
-      - nats
+      nats:
+        condition: service_started
+      timescaledb:
+        condition: service_healthy
 
 volumes:
   valkey-data:
+  timescaledb-data:
