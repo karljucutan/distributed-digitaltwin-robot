@@ -9,8 +9,9 @@ import (
 )
 
 type TelemetryBatchWriter struct {
-	queue     chan pendingTelemetry
-	batchSize int
+	queue               chan pendingTelemetry
+	batchSize           int
+	telemetryRepository *TelemetryRepository
 }
 
 type pendingTelemetry struct {
@@ -18,10 +19,15 @@ type pendingTelemetry struct {
 	onCommitted func() error
 }
 
-func NewTelemetryBatchWriter(queueSize int, batchSize int) *TelemetryBatchWriter {
+func NewTelemetryBatchWriter(
+	queueSize int,
+	batchSize int,
+	telemetryRepository *TelemetryRepository,
+) *TelemetryBatchWriter {
 	return &TelemetryBatchWriter{
-		queue:     make(chan pendingTelemetry, queueSize),
-		batchSize: batchSize,
+		queue:               make(chan pendingTelemetry, queueSize),
+		batchSize:           batchSize,
+		telemetryRepository: telemetryRepository,
 	}
 }
 
@@ -40,7 +46,7 @@ func (tbw *TelemetryBatchWriter) Run(ctx context.Context, interval time.Duration
 		for {
 			select {
 			case <-ctx.Done():
-				batch = tbw.flush(batch)
+				batch = tbw.flush(ctx, batch)
 				slog.Info("telemetry batch writer stopped", "reason", ctx.Err())
 				return
 
@@ -51,21 +57,25 @@ func (tbw *TelemetryBatchWriter) Run(ctx context.Context, interval time.Duration
 
 				batch = append(batch, pendingTelemetry)
 				if len(batch) >= tbw.batchSize {
-					batch = tbw.flush(batch)
+					batch = tbw.flush(ctx, batch)
 					ticker.Reset(interval)
 				}
 
 			case <-ticker.C:
 				if len(batch) > 0 {
-					batch = tbw.flush(batch)
+					batch = tbw.flush(ctx, batch)
 				}
 			}
 		}
 	}()
 }
 
-func (tbw *TelemetryBatchWriter) flush(batch []pendingTelemetry) []pendingTelemetry {
-	// write to db
+func (tbw *TelemetryBatchWriter) flush(ctx context.Context, batch []pendingTelemetry) []pendingTelemetry {
+	telemetries := make([]domain.RobotTelemetry, len(batch))
+	for i := range batch {
+		telemetries[i] = batch[i].telemetry
+	}
+	tbw.telemetryRepository.WriteBatch(ctx, telemetries)
 
 	for _, pendingTelemetry := range batch {
 		if pendingTelemetry.onCommitted != nil {

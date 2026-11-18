@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/karljucutan/distributed-digitaltwin-robot/internal/features/digitaltwin"
 	"github.com/karljucutan/distributed-digitaltwin-robot/pkg/configuration"
 	"github.com/karljucutan/distributed-digitaltwin-robot/pkg/retry"
@@ -16,6 +17,7 @@ import (
 )
 
 type App struct {
+	dbPool               *pgxpool.Pool
 	natsConn             *nats.Conn
 	digitalTwinEngine    *digitaltwin.Engine
 	valkeyClient         valkey.Client
@@ -80,12 +82,15 @@ func NewApp(appCtx context.Context) (*App, error) {
 		return nil, err
 	}
 
+	telemetryRepository := digitaltwin.NewTelemetryRepository(dbPool)
+
 	queueSize := configuration.GetEnvAsInt("TIMESCALEDB_WRITE_QUEUE_SIZE", 1000)
 	batchSize := configuration.GetEnvAsInt("TIMESCALEDB_FLUSH_BATCH_SIZE", 5000)
-	telemetryBatchWriter := digitaltwin.NewTelemetryBatchWriter(queueSize, batchSize)
+	telemetryBatchWriter := digitaltwin.NewTelemetryBatchWriter(queueSize, batchSize, telemetryRepository)
 	dtEngine := digitaltwin.NewEngine(cons, valkeyClient, telemetryBatchWriter)
 
 	return &App{
+		dbPool:               dbPool,
 		natsConn:             nc,
 		digitalTwinEngine:    dtEngine,
 		valkeyClient:         valkeyClient,
@@ -94,6 +99,7 @@ func NewApp(appCtx context.Context) (*App, error) {
 }
 
 func (a *App) Run(appCtx context.Context) error {
+	defer a.dbPool.Close()
 	defer a.valkeyClient.Close()
 	defer func() {
 		closed := a.natsConn.StatusChanged(nats.CLOSED)
