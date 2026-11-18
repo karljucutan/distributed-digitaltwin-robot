@@ -73,6 +73,13 @@ func NewApp(appCtx context.Context) (*App, error) {
 		return nil, fmt.Errorf("create valkey client: %w", err)
 	}
 
+	dbPool, err := openDatabase(appCtx)
+	if err != nil {
+		valkeyClient.Close()
+		nc.Close()
+		return nil, err
+	}
+
 	queueSize := configuration.GetEnvAsInt("TIMESCALEDB_WRITE_QUEUE_SIZE", 1000)
 	batchSize := configuration.GetEnvAsInt("TIMESCALEDB_FLUSH_BATCH_SIZE", 5000)
 	telemetryBatchWriter := digitaltwin.NewTelemetryBatchWriter(queueSize, batchSize)

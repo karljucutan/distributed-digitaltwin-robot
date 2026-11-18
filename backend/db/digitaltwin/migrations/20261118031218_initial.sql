@@ -8,8 +8,8 @@ CREATE TABLE robot_telemetry (
     joint_position_rad DOUBLE PRECISION[] NOT NULL,
     joint_velocity_rad_per_sec DOUBLE PRECISION[] NOT NULL,
     status TEXT NOT NULL,
-    fault_code TEXT NOT NULL,
-    PRIMARY KEY (robot_id, timestamp, sequence)
+    fault_code TEXT NOT NULL
+    -- PRIMARY KEY (robot_id, timestamp, sequence)
 ) WITH (
     tsdb.hypertable,
     tsdb.partition_column = 'timestamp'
