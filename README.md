@@ -1,9 +1,13 @@
 # Distributed Digital Twin Robot
 
 A local robot fleet simulator and digital twin backend. The simulator publishes
-telemetry through NATS JetStream; digital twin workers maintain current robot
-state in Valkey. TimescaleDB is configured for telemetry history, but the
-application's database writer is not implemented yet.
+telemetry to NATS JetStream; digital twin workers consume it, maintain current
+robot state in Valkey, and write telemetry history to TimescaleDB in batches.
+
+Each digital twin instance flushes its telemetry batch when it reaches
+`TIMESCALEDB_FLUSH_BATCH_SIZE` or at `TIMESCALEDB_FLUSH_INTERVAL`. The Compose
+configuration sets these to 5,000 messages and 5 seconds, respectively, and
+sets `TIMESCALEDB_WRITE_QUEUE_SIZE` to 3,000 messages.
 
 ## Prerequisites
 
