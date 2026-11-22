@@ -9,6 +9,10 @@ Each digital twin instance flushes its telemetry batch when it reaches
 configuration sets these to 5,000 messages and 5 seconds, respectively, and
 sets `TIMESCALEDB_WRITE_QUEUE_SIZE` to 3,000 messages.
 
+## Architecture
+
+![High-level architecture diagram](./high-level-diagram.png)
+
 ## Prerequisites
 
 - GNU Make, Podman, and a working Compose provider (`podman compose`).

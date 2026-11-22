@@ -2,6 +2,7 @@ package digitaltwin
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -46,7 +47,11 @@ func (tbw *TelemetryBatchWriter) Run(ctx context.Context, interval time.Duration
 		for {
 			select {
 			case <-ctx.Done():
-				batch = tbw.flush(ctx, batch)
+				var err error
+				batch, err = tbw.flush(ctx, batch)
+				if err != nil {
+					slog.Error("failed to flush telemetry batch on shutdown", "error", err)
+				}
 				slog.Info("telemetry batch writer stopped", "reason", ctx.Err())
 				return
 
@@ -57,25 +62,35 @@ func (tbw *TelemetryBatchWriter) Run(ctx context.Context, interval time.Duration
 
 				batch = append(batch, pendingTelemetry)
 				if len(batch) >= tbw.batchSize {
-					batch = tbw.flush(ctx, batch)
+					var err error
+					batch, err = tbw.flush(ctx, batch)
+					if err != nil {
+						slog.Error("failed to flush telemetry batch", "error", err)
+					}
 					ticker.Reset(interval)
 				}
 
 			case <-ticker.C:
 				if len(batch) > 0 {
-					batch = tbw.flush(ctx, batch)
+					var err error
+					batch, err = tbw.flush(ctx, batch)
+					if err != nil {
+						slog.Error("failed to flush telemetry batch", "error", err)
+					}
 				}
 			}
 		}
 	}()
 }
 
-func (tbw *TelemetryBatchWriter) flush(ctx context.Context, batch []pendingTelemetry) []pendingTelemetry {
+func (tbw *TelemetryBatchWriter) flush(ctx context.Context, batch []pendingTelemetry) ([]pendingTelemetry, error) {
 	telemetries := make([]domain.RobotTelemetry, len(batch))
 	for i := range batch {
 		telemetries[i] = batch[i].telemetry
 	}
-	tbw.telemetryRepository.WriteBatch(ctx, telemetries)
+	if err := tbw.telemetryRepository.WriteBatch(ctx, telemetries); err != nil {
+		return batch, fmt.Errorf("write telemetry batch: %w", err)
+	}
 
 	for _, pendingTelemetry := range batch {
 		if pendingTelemetry.onCommitted != nil {
@@ -85,5 +100,5 @@ func (tbw *TelemetryBatchWriter) flush(ctx context.Context, batch []pendingTelem
 		}
 	}
 
-	return batch[:0]
+	return batch[:0], nil
 }
