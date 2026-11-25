@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -24,8 +25,20 @@ type App struct {
 	telemetryBatchWriter *digitaltwin.TelemetryBatchWriter
 }
 
-func NewApp(appCtx context.Context) (*App, error) {
+func NewApp(appCtx context.Context) (_ *App, err error) {
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
+	// On failure, close resources acquired so far in reverse order.
+	// On success, the returned App owns them.
+	var closers []func()
+	defer func() {
+		if err != nil {
+			for _, closer := range slices.Backward(closers) {
+				closer()
+			}
+		}
+	}()
+
 	startupCtx, cancel := context.WithTimeout(appCtx, 30*time.Second)
 	defer cancel()
 
@@ -33,10 +46,10 @@ func NewApp(appCtx context.Context) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("connect to NATS: %w", err)
 	}
+	closers = append(closers, nc.Close)
 
 	js, err := jetstream.New(nc)
 	if err != nil {
-		nc.Close()
 		return nil, fmt.Errorf("create JetStream client: %w", err)
 	}
 
@@ -62,7 +75,6 @@ func NewApp(appCtx context.Context) (*App, error) {
 		return err
 	})
 	if err != nil {
-		nc.Close()
 		return nil, err
 	}
 
@@ -71,16 +83,15 @@ func NewApp(appCtx context.Context) (*App, error) {
 		InitAddress: []string{"valkey:6379"},
 	})
 	if err != nil {
-		nc.Close()
 		return nil, fmt.Errorf("create valkey client: %w", err)
 	}
+	closers = append(closers, valkeyClient.Close)
 
 	dbPool, err := openDatabase(appCtx)
 	if err != nil {
-		valkeyClient.Close()
-		nc.Close()
 		return nil, err
 	}
+	closers = append(closers, dbPool.Close)
 
 	telemetryRepository := digitaltwin.NewTelemetryRepository(dbPool)
 
